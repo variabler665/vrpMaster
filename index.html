@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>City Sentinel — Radar Console</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="c" aria-label="tactical radar canvas"></canvas>
+  <div class="hud">
+    <section class="panel" id="panelTop">
+      <header class="hd">
+        <div class="title">
+          <span class="badge"><span class="dot"></span><span>CITY SENTINEL / RADAR CONSOLE</span></span>
+          <button class="toggle" data-target="panelTop">▾</button>
+        </div>
+        <span class="badge"><span class="dot ok" id="dotSys"></span><span id="sysState">SYS NOMINAL</span></span>
+      </header>
+      <div class="bd">
+        <div class="kv mono">
+          <div class="k">ВРЕМЯ (SIM)</div><div class="v" id="simTime">00:00:00</div>
+          <div class="k">ОБЗОР</div><div class="v"><span id="sweepRpm">—</span> RPM / период <span id="sweepPer">—</span>s</div>
+          <div class="k">РЕЖИМ РЛС</div><div class="v"><select id="radarMode"></select></div>
+          <div class="k">ДАЛЬНОСТЬ</div><div class="v"><span id="rng">—</span> км / шум <span id="noise">—</span></div>
+          <div class="k">ВЕТЕР (низк.)</div><div class="v"><span id="wind">—</span></div>
+          <div class="k">КОНТАКТЫ</div><div class="v"><span id="ct">0</span> (трасс: <span id="tr">0</span>)</div>
+          <div class="k">ПУСКИ ПВО</div><div class="v">в полёте: <span id="sam">0</span></div>
+          <div class="k">ПАТРУЛИ</div><div class="v"><span id="pat">—</span> доступно</div>
+        </div>
+        <div class="sep"></div>
+        <div class="small">
+          ЛКМ по отметке — выбрать. Колёсико — зум по курсору. ПКМ — центрировать город.
+          <br/>Горячие клавиши: <b>Space</b> пауза, <b>A</b> авто-ведение, <b>C</b> классифицировать, <b>E</b> тревога, <b>P</b> патруль, <b>F</b> пуск ПВО, <b>Esc</b> снять выбор.
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panelRight">
+      <header class="hd">
+        <div class="title">
+          <span class="badge"><span class="dot"></span><span>СИТУАЦИЯ / ТРАССЫ</span></span>
+          <button class="toggle" data-target="panelRight">▾</button>
+        </div>
+        <span class="badge"><span class="dot warn" id="dotThreat"></span><span id="threatState">MONITORING</span></span>
+      </header>
+      <div class="bd targets">
+        <div class="filters">
+          <label><input type="checkbox" id="filterCritical"> критические</label>
+          <label><input type="checkbox" id="filterInbound"> входящие</label>
+          <label><input type="checkbox" id="filterUnknown"> неопозн.</label>
+        </div>
+        <div class="list" id="list"></div>
+        <div class="sep"></div>
+        <div class="btnbar">
+          <button id="btnClassify">Классифицировать (C)</button>
+          <button id="btnAlert" class="primary">Тревога (E)</button>
+          <button id="btnPatrol">Патруль (P)</button>
+          <button id="btnIntercept" class="danger">Пуск ПВО (F)</button>
+          <button id="btnPause">Пауза (Space)</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panelBottom">
+      <header class="hd">
+        <div class="title">
+          <span class="badge"><span class="dot"></span><span>ЛЕГЕНДА / СВОДКА</span></span>
+          <button class="toggle" data-target="panelBottom">▾</button>
+        </div>
+        <span class="badge"><span class="dot" id="legendState"></span><span>Справка</span></span>
+      </header>
+      <div class="bd legend" id="legend">
+        <div class="legend-body">
+          <p>Опасность: <span class="pill bad">CRITICAL</span> > <span class="pill warn">HIGH</span> > <span class="pill">MED</span> > <span class="pill ok">LOW</span>. Качество трека растёт от устойчивых плотов; пуск возможен при качестве ≥ 0.6.</p>
+          <p>Режимы радара: Дальность — дальние цели, Низковысотный — ближние/низкие, Сбалансированный — базовый. На мобильных легенда свернута.</p>
+          <p>Патрули улучшают классификацию; ложные тревоги штрафуют очки. Ресурс внимания: при большом числе целей качество треков падает быстрее.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panelLog">
+      <header class="hd">
+        <div class="title">
+          <span class="badge"><span class="dot"></span><span>ЛОГ / СОБЫТИЯ</span></span>
+          <button class="toggle" data-target="panelLog">▾</button>
+        </div>
+        <span class="badge"><span class="dot" id="dotLog"></span><span>STREAM</span></span>
+      </header>
+      <div class="bd">
+        <div class="logbox" id="log"></div>
+      </div>
+    </section>
+  </div>
+  <div class="hint" id="hint">Режим: EASY — мягкий темп, переключите в NORMAL для большего давления.</div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
