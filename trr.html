@@ -1,0 +1,1682 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>City Sentinel — Radar Console (Игровой симулятор)</title>
+  <style>
+    :root{
+      --bg:#05080a;
+      --panel:#071014cc;
+      --panel2:#071014ee;
+      --grid:#0f2a26;
+      --line:#22f3b6;
+      --line2:#1bd39f;
+      --dim:#0a6b55;
+      --warn:#ffd36a;
+      --bad:#ff5b7a;
+      --ok:#8cffb1;
+      --text:#b8ffe8;
+      --muted:#66bfa3;
+      --shadow:#000000aa;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    html,body{height:100%; margin:0; background:var(--bg); color:var(--text); font-family:var(--mono); overflow:hidden;}
+    canvas{position:fixed; inset:0; width:100%; height:100%;}
+    .hud{position:fixed; inset:0; pointer-events:none;}
+    .panel{
+      pointer-events:auto;
+      position:absolute;
+      background:var(--panel);
+      border:1px solid #123a33;
+      box-shadow: 0 10px 30px var(--shadow);
+      backdrop-filter: blur(6px);
+    }
+    .panel .hd{
+      padding:10px 12px;
+      border-bottom:1px solid #123a33;
+      display:flex; gap:10px; align-items:center; justify-content:space-between;
+      font-size:12px; letter-spacing:.08em; text-transform:uppercase;
+      background:linear-gradient(180deg, #071c18cc, transparent);
+    }
+    .panel .bd{padding:10px 12px; font-size:12px; line-height:1.35;}
+    .badge{display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border:1px solid #1b5c50; border-radius:999px; color:var(--text);}
+    .dot{width:8px; height:8px; border-radius:999px; background:var(--line);}
+    .dot.warn{background:var(--warn);}
+    .dot.bad{background:var(--bad);}
+    .dot.ok{background:var(--ok);}
+
+    /* Layout */
+    #topLeft{left:14px; top:14px; width:360px;}
+    #right{right:14px; top:14px; width:380px; height:calc(100% - 28px);}
+    #bottomLeft{left:14px; bottom:14px; width:420px;}
+    #log{right:410px; bottom:14px; width:520px; max-width:calc(100% - 860px);}
+
+    /* Lists & tables */
+    .kv{display:grid; grid-template-columns: 140px 1fr; gap:4px 10px; align-items:baseline;}
+    .k{color:var(--muted);}
+    .v{color:var(--text);}
+    .small{font-size:11px; color:var(--muted);}
+    .sep{height:1px; background:#123a33; margin:10px 0;}
+    .btnbar{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;}
+    button{
+      pointer-events:auto;
+      cursor:pointer;
+      background:#071a16;
+      color:var(--text);
+      border:1px solid #1b5c50;
+      padding:7px 10px;
+      border-radius:8px;
+      font-family:var(--mono);
+      font-size:12px;
+      letter-spacing:.02em;
+    }
+    button:hover{border-color:#2df0c0;}
+    button:active{transform: translateY(1px);}
+    button.primary{background:#08261f; border-color:#2df0c0;}
+    button.danger{background:#250812; border-color:#ff5b7a;}
+    button:disabled{opacity:.5; cursor:not-allowed;}
+    .targets{
+      font-size:12px;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      height:100%;
+    }
+    .targets .list{
+      overflow:auto;
+      border:1px solid #123a33;
+      border-radius:10px;
+      background: #05110f99;
+      padding:8px;
+      height: 45%;
+    }
+    .row{
+      display:grid;
+      grid-template-columns: 70px 1fr 60px 70px;
+      gap:8px;
+      align-items:center;
+      padding:6px 8px;
+      border-radius:8px;
+      border:1px solid transparent;
+      cursor:pointer;
+      user-select:none;
+    }
+    .row:hover{border-color:#1b5c50; background:#06201a55;}
+    .row.sel{border-color:#2df0c0; background:#06201a99;}
+    .pill{display:inline-block; padding:2px 7px; border-radius:999px; border:1px solid #1b5c50; color:var(--muted); font-size:11px;}
+    .pill.bad{border-color:#ff5b7a; color:#ffd0da;}
+    .pill.warn{border-color:#ffd36a; color:#ffefc0;}
+    .pill.ok{border-color:#8cffb1; color:#d7ffe3;}
+    .mono{font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1;}
+    .logbox{
+      max-height:220px;
+      overflow:auto;
+      border:1px solid #123a33;
+      border-radius:10px;
+      padding:8px;
+      background:#05110f99;
+    }
+    .logline{padding:4px 0; border-bottom:1px dashed #123a33; color:var(--muted);}
+    .logline b{color:var(--text); font-weight:600;}
+    .corner{
+      position:fixed; right:12px; bottom:12px;
+      padding:6px 10px;
+      background:#071014aa;
+      border:1px solid #123a33;
+      border-radius:10px;
+      font-size:11px;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      color:var(--muted);
+      pointer-events:none;
+    }
+    .hint{
+      position:fixed; left:50%; transform:translateX(-50%);
+      bottom:10px; padding:6px 10px;
+      background:#071014aa;
+      border:1px solid #123a33;
+      border-radius:10px;
+      font-size:11px;
+      color:var(--muted);
+      pointer-events:none;
+      max-width: min(980px, calc(100% - 40px));
+      text-align:center;
+    }
+    @media (max-width:1200px){
+      #log{display:none;}
+      #right{width:360px;}
+      #bottomLeft{width:380px;}
+    }
+    @media (max-width:980px){
+      #topLeft{width:320px;}
+      #right{display:none;}
+      #bottomLeft{width:calc(100% - 28px);}
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div class="hud">
+    <div class="panel" id="topLeft">
+      <div class="hd">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="badge"><span class="dot"></span><span>CITY SENTINEL / RADAR CONSOLE</span></span>
+        </div>
+        <span class="badge"><span class="dot ok" id="dotSys"></span><span id="sysState">SYS NOMINAL</span></span>
+      </div>
+      <div class="bd">
+        <div class="kv mono">
+          <div class="k">ВРЕМЯ (SIM)</div><div class="v" id="simTime">00:00:00</div>
+          <div class="k">ОБЗОР</div><div class="v"><span id="sweepRpm">15.0</span> RPM / период <span id="sweepPer">4.0</span>s</div>
+          <div class="k">ДАЛЬНОСТЬ РЛС</div><div class="v"><span id="rng">90</span> км / шум <span id="noise">LOW</span></div>
+          <div class="k">ВЕТЕР (низк.)</div><div class="v"><span id="wind">—</span></div>
+          <div class="k">КОНТАКТЫ</div><div class="v"><span id="ct">0</span> (из них трасс: <span id="tr">0</span>)</div>
+          <div class="k">ПАТРУЛИ</div><div class="v"><span id="pat">3</span> доступно</div>
+        </div>
+        <div class="sep"></div>
+        <div class="small">
+          ЛКМ по отметке — выбрать. Колёсико — зум. ПКМ — “центр на городе”.
+          <br/>Горячие клавиши: <b>Space</b> пауза, <b>A</b> авто-ведение, <b>C</b> классифицировать, <b>E</b> тревога, <b>P</b> назначить патруль, <b>Esc</b> снять выбор.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="right">
+      <div class="hd">
+        <span class="badge"><span class="dot"></span><span>СИТУАЦИЯ / ТРАССЫ</span></span>
+        <span class="badge"><span class="dot warn" id="dotThreat"></span><span id="threatState">MONITORING</span></span>
+      </div>
+      <div class="bd targets">
+        <div class="list" id="list"></div>
+
+        <div class="sep"></div>
+
+        <div>
+          <div class="badge"><span class="dot"></span><span>ВЫБРАННАЯ ЦЕЛЬ</span></div>
+          <div class="sep" style="margin:8px 0;"></div>
+          <div class="kv mono" id="selKv">
+            <div class="k">ID</div><div class="v">—</div>
+            <div class="k">КЛАСС</div><div class="v">—</div>
+            <div class="k">ДАЛЬНОСТЬ</div><div class="v">—</div>
+            <div class="k">СКОРОСТЬ</div><div class="v">—</div>
+            <div class="k">ВЫСОТА</div><div class="v">—</div>
+            <div class="k">RCS (оценка)</div><div class="v">—</div>
+            <div class="k">КУРС</div><div class="v">—</div>
+            <div class="k">КАЧЕСТВО ТРЕКА</div><div class="v">—</div>
+            <div class="k">ОПАСНОСТЬ</div><div class="v">—</div>
+          </div>
+
+          <div class="btnbar">
+            <button class="primary" id="btnAuto">AUTO-TRACK (A)</button>
+            <button id="btnClass">CLASSIFY (C)</button>
+            <button id="btnAlert">ISSUE ALERT (E)</button>
+            <button id="btnPatrol">ASSIGN PATROL (P)</button>
+            <button class="danger" id="btnDrop">DROP SELECT (ESC)</button>
+          </div>
+
+          <div class="small" style="margin-top:10px;">
+            “Патруль” — игровой небоевой механизм: сопровождающий дрон вынуждает объект покинуть зону (без поражения/оружия).
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="bottomLeft">
+      <div class="hd">
+        <span class="badge"><span class="dot"></span><span>РЕЖИМЫ / НАСТРОЙКИ</span></span>
+        <span class="badge"><span class="dot" id="dotPause"></span><span id="pauseState">RUN</span></span>
+      </div>
+      <div class="bd">
+        <div class="kv mono">
+          <div class="k">МАСШТАБ</div><div class="v"><span id="zoomTxt">1.00×</span></div>
+          <div class="k">АВТО-ВЕДЕНИЕ</div><div class="v"><span id="autoTxt">OFF</span> (подхватывает контакты в трассы)</div>
+          <div class="k">АВТО-КЛАСС</div><div class="v"><span id="autoClTxt">ON</span> (после накопления наблюдений)</div>
+          <div class="k">СЛОЖНОСТЬ</div><div class="v">EASY / “симуляторно-кайфово”</div>
+        </div>
+
+        <div class="sep"></div>
+        <div class="btnbar">
+          <button id="btnZoomIn">ZOOM +</button>
+          <button id="btnZoomOut">ZOOM −</button>
+          <button id="btnReset">RESET SCENARIO</button>
+          <button id="btnMute">SOUND: ON</button>
+        </div>
+        <div class="small" style="margin-top:10px;">
+          Подсказка: не “стреляем” — тут задача оператора РЛС: обнаружить, сопровождать, классифицировать, поднять тревогу, направить патруль.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="log">
+      <div class="hd">
+        <span class="badge"><span class="dot"></span><span>ЖУРНАЛ</span></span>
+        <span class="badge"><span class="dot"></span><span id="score">SCORE 0</span></span>
+      </div>
+      <div class="bd">
+        <div class="logbox" id="logbox"></div>
+      </div>
+    </div>
+
+    <div class="corner">ИГРОВОЙ СИМУЛЯТОР / НЕ РЕАЛЬНАЯ СИСТЕМА</div>
+    <div class="hint">Цели появляются с окраин, идут “медленно” в масштабе радара. Треки затухают. Сигналы приходят по обзору (как на настоящей РЛС), а не непрерывно.</div>
+  </div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Helpers ----------
+  const TAU = Math.PI * 2;
+  const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+  const lerp  = (a,b,t)=>a+(b-a)*t;
+  const dist2 = (ax,ay,bx,by)=>{ const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; };
+  const dist  = (ax,ay,bx,by)=>Math.hypot(ax-bx,ay-by);
+  const wrapAng = (a)=>{ a%=TAU; if(a<0)a+=TAU; return a; };
+  const angDiff = (a,b)=>{ // shortest signed diff b-a
+    let d = wrapAng(b)-wrapAng(a);
+    if(d> Math.PI) d-=TAU;
+    if(d<-Math.PI) d+=TAU;
+    return d;
+  };
+  const rnd = (a=1,b=0)=>Math.random()*(a-b)+b;
+  const rndi = (a,b)=>Math.floor(rnd(a,b+1));
+  const pick = (arr)=>arr[(Math.random()*arr.length)|0];
+  const fmt2 = (x)=>Number.isFinite(x)?x.toFixed(2):'—';
+  const fmt1 = (x)=>Number.isFinite(x)?x.toFixed(1):'—';
+  const fmt0 = (x)=>Number.isFinite(x)?Math.round(x).toString():'—';
+
+  // quick-ish gaussian
+  function randn(){
+    let u=0,v=0;
+    while(u===0) u=Math.random();
+    while(v===0) v=Math.random();
+    return Math.sqrt(-2*Math.log(u))*Math.cos(TAU*v);
+  }
+
+  // ---------- Audio (simple beeps) ----------
+  let audioCtx = null;
+  let soundOn = true;
+  function beep(freq=880, dur=0.06, gain=0.04){
+    if(!soundOn) return;
+    try{
+      if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      const t0 = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      g.gain.value = gain;
+      osc.connect(g); g.connect(audioCtx.destination);
+      osc.start(t0);
+      g.gain.setValueAtTime(gain, t0);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+      osc.stop(t0+dur);
+    }catch(e){}
+  }
+
+  // ---------- World / Radar Model ----------
+  const WORLD = {
+    radarRangeKm: 90,     // max instrumented range
+    cityDangerKm: 3.5,    // "impact" radius
+    innerRingKm: 12,      // warning ring
+    midRingKm: 35,        // advisory ring
+    sweepRpm: 15,         // ~ 4 sec per rev
+    beamWidthDeg: 2.2,    // narrow beam
+    noiseMode: 'LOW',     // affects measurement noise
+    autoTrack: true,
+    autoClassify: true,
+    easyMode: true
+  };
+
+  // measurement noise presets (roughly plausible for game)
+  const NOISE = {
+    LOW:  { rng_m: 35, spd_ms: 1.0, alt_m: 12, rcs_rel: 0.12, brg_deg: 0.15 },
+    MED:  { rng_m: 60, spd_ms: 1.6, alt_m: 20, rcs_rel: 0.18, brg_deg: 0.25 },
+    HIGH: { rng_m: 95, spd_ms: 2.3, alt_m: 35, rcs_rel: 0.25, brg_deg: 0.4  }
+  };
+
+  const PROFILES = [
+    {
+      key:'SLOW_UAV', label:'ДРОН (малый)',  vms:[26,38], alt:[70,160], rcs:[0.015,0.06],
+      turnDeg:[10,18], climb:[1.5,3.5], style:'uav', behavior:'sneak'
+    },
+    {
+      key:'FAST_UAV', label:'БПЛА (скоростной)', vms:[45,80], alt:[140,420], rcs:[0.03,0.12],
+      turnDeg:[7,12], climb:[2.0,4.5], style:'uav', behavior:'convoy'
+    },
+    {
+      key:'CRUISE_T', label:'КРЫЛАТЫЙ ТИП', vms:[190,245], alt:[220,650], rcs:[0.06,0.22],
+      turnDeg:[2.2,4.2], climb:[0.8,2.0], style:'cruise', behavior:'lowcruise'
+    },
+    {
+      key:'GLIDER', label:'ПЛАНЕР / ГЛАЙДЕР', vms:[85,135], alt:[1100,2400], rcs:[0.08,0.35],
+      turnDeg:[1.8,3.6], climb:[-10,-4], style:'glide', behavior:'glide_dive'
+    },
+    {
+      key:'BALLOON', label:'ШАР / МЕТЕО', vms:[8,18], alt:[350,1100], rcs:[0.25,1.2],
+      turnDeg:[0.8,1.8], climb:[-0.2,0.2], style:'balloon', behavior:'drift'
+    }
+  ];
+
+  // wind only affects low-alt stuff more (game simplification)
+  let wind = { x: 0.0, y: 0.0, tgtX:0.0, tgtY:0.0, t:0 };
+
+  function updateWind(dt){
+    wind.t += dt;
+    // every ~8-16s pick a new slow wind target
+    if(wind.t > wind.next){
+      wind.t = 0;
+      wind.next = rnd(8,16);
+      const sp = rnd(0.4, 2.2);        // m/s equivalent drift at low alt (in km/s later)
+      const ang = rnd(0, TAU);
+      wind.tgtX = Math.cos(ang)*sp;
+      wind.tgtY = Math.sin(ang)*sp;
+    }
+    // smooth to target
+    wind.x = lerp(wind.x, wind.tgtX, 1 - Math.exp(-dt*0.35));
+    wind.y = lerp(wind.y, wind.tgtY, 1 - Math.exp(-dt*0.35));
+  }
+
+  // ---------- Entities ----------
+  let uid = 1;
+
+  class Target {
+    constructor(profile, spawn, plan){
+      this.uid = uid++;
+      this.profile = profile;
+
+      // world coords in km relative to city (0,0)
+      this.x = spawn.x; this.y = spawn.y;
+      this.alt = spawn.alt; // meters
+      this.v = spawn.v;     // m/s
+      this.hdg = spawn.hdg; // radians
+      this.rcs = spawn.rcs; // m^2 (estimated "radar cross section")
+
+      this.turnRate = spawn.turnRate; // rad/s max
+      this.climbRate = spawn.climbRate; // m/s (abs max)
+
+      this.plan = plan;     // { waypoints:[{x,y}], mode:'...' }
+      this.wpIdx = 0;
+
+      this.intent = 'INBOUND';
+      this.group = plan.group || 0;
+
+      this.age = 0;
+      this.alive = true;
+      this.escorted = false;
+
+      // for smoother behavior & classification features
+      this.prevAlt = this.alt;
+      this.prevHdg = this.hdg;
+      this.maneuverRate = 0; // deg/s approx
+      this.vv = 0; // vertical speed m/s
+    }
+
+    desiredPoint(){
+      const wps = this.plan.waypoints;
+      const idx = clamp(this.wpIdx, 0, wps.length-1);
+      return wps[idx];
+    }
+
+    stepWaypoint(){
+      const p = this.desiredPoint();
+      if(dist(this.x,this.y,p.x,p.y) < 1.2){ // km threshold
+        this.wpIdx = Math.min(this.wpIdx+1, this.plan.waypoints.length-1);
+      }
+    }
+
+    update(dt){
+      this.age += dt;
+
+      // apply behavior modes (desired speed/alt, gentle changes)
+      const prof = this.profile;
+      const mode = prof.behavior;
+
+      // wind scaling by altitude: low alt => stronger drift
+      const lowFactor = clamp(1.0 - (this.alt/1400), 0.0, 1.0); // 0 above ~1400m
+      const drift_kmps_x = (wind.x * lowFactor) / 1000; // m/s -> km/s
+      const drift_kmps_y = (wind.y * lowFactor) / 1000;
+
+      // waypoint navigation
+      const p = this.desiredPoint();
+      const desiredH = Math.atan2(p.y - this.y, p.x - this.x);
+
+      // turn toward desired heading with limit
+      const d = angDiff(this.hdg, desiredH);
+      const maxTurn = this.turnRate * dt;
+      const turn = clamp(d, -maxTurn, maxTurn);
+      const oldH = this.hdg;
+      this.hdg = wrapAng(this.hdg + turn);
+
+      // maneuver rate estimate (deg/s)
+      this.maneuverRate = Math.abs(angDiff(oldH, this.hdg)) * (180/Math.PI) / Math.max(dt,1e-6);
+
+      // speed controller (very gentle)
+      let vTarget = this.v;
+      if(mode === 'sneak'){
+        vTarget = clamp(this.v + rnd(-0.8,0.8), prof.vms[0], prof.vms[1]);
+      } else if(mode === 'convoy'){
+        // keep steady with slight oscillation
+        vTarget = clamp(lerp(this.v, (prof.vms[0]+prof.vms[1])*0.5, 0.02) + Math.sin(this.age*0.6)*0.6, prof.vms[0], prof.vms[1]);
+      } else if(mode === 'lowcruise'){
+        vTarget = clamp((prof.vms[0]+prof.vms[1])*0.5 + Math.sin(this.age*0.35)*0.8, prof.vms[0], prof.vms[1]);
+      } else if(mode === 'glide_dive'){
+        // glider tends to speed up slightly when descending later
+        const r = dist(this.x,this.y,0,0);
+        const dive = clamp(1 - (r/30), 0, 1); // starts closer to city
+        vTarget = clamp(lerp((prof.vms[0]+prof.vms[1])*0.5, prof.vms[1], dive) + Math.sin(this.age*0.25)*0.5, prof.vms[0], prof.vms[1]);
+      } else if(mode === 'drift'){
+        vTarget = clamp((prof.vms[0]+prof.vms[1])*0.5 + Math.sin(this.age*0.2)*0.4, prof.vms[0], prof.vms[1]);
+      }
+      this.v = lerp(this.v, vTarget, 1 - Math.exp(-dt*0.35));
+
+      // altitude controller
+      let altTarget = this.alt;
+      if(mode === 'sneak'){
+        altTarget = clamp((prof.alt[0]+prof.alt[1])*0.5 + Math.sin(this.age*0.9)*10 + randn()*3, prof.alt[0], prof.alt[1]);
+      } else if(mode === 'convoy'){
+        altTarget = clamp((prof.alt[0]+prof.alt[1])*0.5 + Math.sin(this.age*0.4)*18, prof.alt[0], prof.alt[1]);
+      } else if(mode === 'lowcruise'){
+        altTarget = clamp((prof.alt[0]+prof.alt[1])*0.5 + Math.sin(this.age*0.25)*25, prof.alt[0], prof.alt[1]);
+      } else if(mode === 'glide_dive'){
+        const r = dist(this.x,this.y,0,0);
+        const dive = clamp(1 - (r/28), 0, 1);
+        // high cruise then descend; faster descent near city
+        const high = (prof.alt[0]+prof.alt[1])*0.5;
+        const low  = 180 + Math.sin(this.age*0.7)*10;
+        altTarget = lerp(high, low, dive);
+      } else if(mode === 'drift'){
+        altTarget = clamp((prof.alt[0]+prof.alt[1])*0.5 + Math.sin(this.age*0.15)*35, prof.alt[0], prof.alt[1]);
+      }
+
+      // if escorted, it will leave: climb a bit & steer away
+      if(this.escorted){
+        altTarget = Math.max(altTarget, 450);
+      }
+
+      // vertical speed with limit
+      this.prevAlt = this.alt;
+      const altErr = altTarget - this.alt;
+      const vvCmd = clamp(altErr * 0.25, this.climbRate, -this.climbRate); // m/s, note climbRate may be negative for glider (descent)
+      // if climbRate negative range, handle absolute envelope:
+      const vvMax = Math.max(Math.abs(this.climbRate), 0.2);
+      const vv = clamp(vvCmd, -vvMax, vvMax);
+      this.alt += vv * dt;
+      this.vv = (this.alt - this.prevAlt)/Math.max(dt,1e-6);
+
+      // move in km (v is m/s)
+      const kmps = this.v / 1000;
+      this.x += Math.cos(this.hdg) * kmps * dt + drift_kmps_x * dt;
+      this.y += Math.sin(this.hdg) * kmps * dt + drift_kmps_y * dt;
+
+      this.stepWaypoint();
+    }
+
+    rangeKm(){ return Math.hypot(this.x, this.y); }
+
+    // simulate "impact" if it reaches city radius and still inbound
+    checkCity(){
+      if(this.intent !== 'INBOUND') return false;
+      return this.rangeKm() <= WORLD.cityDangerKm;
+    }
+  }
+
+  class Patrol {
+    constructor(){
+      this.busy = false;
+      this.x = 0; this.y = 0; // km, starts at city
+      this.v = 55;            // m/s (inspection drone / patrol craft)
+      this.hdg = 0;
+      this.target = null;
+      this.ttl = 0;
+      this.stage = 'IDLE';    // IDLE | ENROUTE | SHADOW
+    }
+    assign(t){
+      this.busy = true;
+      this.target = t;
+      this.stage = 'ENROUTE';
+      this.ttl = 120; // seconds max assignment (game)
+    }
+    release(){
+      this.busy = false;
+      this.target = null;
+      this.stage = 'IDLE';
+      this.x = 0; this.y = 0;
+      this.ttl = 0;
+    }
+    update(dt){
+      if(!this.busy || !this.target || !this.target.alive){
+        this.release();
+        return;
+      }
+      this.ttl -= dt;
+      if(this.ttl <= 0){
+        this.release();
+        return;
+      }
+      const t = this.target;
+      const dx = t.x - this.x;
+      const dy = t.y - this.y;
+      const d = Math.hypot(dx,dy);
+
+      // simple pursuit (not weapon guidance) with turn limit
+      const desired = Math.atan2(dy, dx);
+      const turnRate = 3.8 * (Math.PI/180); // rad/s
+      const dd = angDiff(this.hdg, desired);
+      const maxT = turnRate*dt;
+      this.hdg = wrapAng(this.hdg + clamp(dd, -maxT, maxT));
+
+      const kmps = (this.v/1000);
+      this.x += Math.cos(this.hdg)*kmps*dt;
+      this.y += Math.sin(this.hdg)*kmps*dt;
+
+      if(this.stage === 'ENROUTE' && d < 0.8){
+        this.stage = 'SHADOW';
+        // nudge target to leave (game mechanic)
+        t.escorted = true;
+        t.intent = 'EXIT';
+        // create an "exit waypoint" away from city along its current bearing
+        const ang = Math.atan2(t.y, t.x);
+        const far = 120;
+        t.plan.waypoints = [{x:t.x,y:t.y}, {x:Math.cos(ang)*far, y:Math.sin(ang)*far}];
+        t.wpIdx = 0;
+        beep(1200, 0.06, 0.035);
+      }
+      if(this.stage === 'SHADOW'){
+        // stay near the target
+        if(d > 1.5) this.stage = 'ENROUTE';
+      }
+    }
+  }
+
+  class Track {
+    constructor(tgt){
+      this.tgt = tgt;
+      this.uid = tgt.uid;
+      this.created = simT;
+      this.lastPlot = -1e9;
+      this.lastSeen = -1e9;
+
+      this.quality = 0.0;       // 0..1
+      this.plots = 0;           // number of radar plots used
+      this.identified = false;
+      this.id4 = null;
+      this.cls = '—';
+      this.conf = 0.0;
+
+      this.alerted = false;
+      this.alertTime = null;
+
+      // state estimate from plots
+      this.x = tgt.x; this.y = tgt.y; // km
+      this.alt = tgt.alt;             // m
+      this.v = tgt.v;                 // m/s
+      this.hdg = tgt.hdg;             // rad
+      this.rcs = tgt.rcs;
+
+      this.vv = 0;
+      this.man = 0;
+
+      // history for fading track trail
+      this.hist = []; // {x,y,t}
+    }
+
+    pushHist(x,y){
+      this.hist.push({x,y,t:simT});
+      // keep last ~40 seconds
+      while(this.hist.length && simT - this.hist[0].t > 40) this.hist.shift();
+    }
+
+    dangerLevel(){
+      const r = Math.hypot(this.x,this.y);
+      if(r < WORLD.cityDangerKm*2) return 'CRITICAL';
+      if(r < WORLD.innerRingKm) return 'HIGH';
+      if(r < WORLD.midRingKm) return 'MED';
+      return 'LOW';
+    }
+  }
+
+  class Radar {
+    constructor(){
+      this.ang = 0; // sweep angle
+      this.rpm = WORLD.sweepRpm;
+      this.beam = WORLD.beamWidthDeg * (Math.PI/180);
+      this.prevAng = 0;
+    }
+    update(dt){
+      this.prevAng = this.ang;
+      const rps = this.rpm / 60;
+      this.ang = wrapAng(this.ang + TAU * rps * dt);
+    }
+    // check if sweep crossed bearing of target
+    isIlluminated(bearing){
+      // beam centered at this.ang; treat as within beam width
+      const d = Math.abs(angDiff(this.ang, bearing));
+      return d <= this.beam;
+    }
+    // return plot with probability based on range & rcs
+    tryDetect(t){
+      const rKm = t.rangeKm();
+      if(rKm > WORLD.radarRangeKm) return null;
+
+      const brg = Math.atan2(t.y, t.x);
+      if(!this.isIlluminated(brg)) return null;
+
+      // SNR-ish heuristic: rcs / r^4 scaled, plus altitude helps a bit
+      const r = Math.max(rKm, 0.8);
+      const altBoost = clamp(0.85 + (t.alt/2500)*0.25, 0.8, 1.15);
+      const snr = (t.rcs * altBoost) / Math.pow(r, 4);
+
+      // tune to get sparse plots but stable tracks
+      const base = 0.30 + (snr * 2500); // magic scaling for game
+      const p = clamp(base, 0.08, 0.92);
+
+      if(Math.random() > p) return null;
+
+      // measurement noise
+      const nm = NOISE[WORLD.noiseMode];
+      const rng_m = (rKm*1000) + randn()*nm.rng_m;
+      const brg_deg = (brg*(180/Math.PI)) + randn()*nm.brg_deg;
+      const rcs = Math.max(0.001, t.rcs * (1 + randn()*nm.rcs_rel));
+      const spd = Math.max(1, t.v + randn()*nm.spd_ms);
+      const alt = Math.max(0, t.alt + randn()*nm.alt_m);
+
+      return {
+        rng_m, brg_deg, rcs, spd, alt,
+        tt: simT
+      };
+    }
+  }
+
+  // ---------- Scenario / Spawning ----------
+  let targets = [];
+  let tracks = new Map(); // uid -> Track
+  let patrols = [new Patrol(), new Patrol(), new Patrol()];
+
+  let simT = 0;
+  let paused = false;
+  let score = 0;
+
+  // waves
+  let nextWave = 4;
+  let waveCounter = 0;
+
+  function makeSpawnAtEdge(profile){
+    // spawn near radar edge
+    const r = rnd(WORLD.radarRangeKm*0.86, WORLD.radarRangeKm*0.99);
+    const a = rnd(0,TAU);
+    const x = Math.cos(a)*r;
+    const y = Math.sin(a)*r;
+
+    // initial heading roughly to city with a small offset
+    const toCity = Math.atan2(-y, -x);
+    const hdg = wrapAng(toCity + rnd(-0.22, 0.22));
+
+    const v = rnd(profile.vms[0], profile.vms[1]);
+    const alt = rnd(profile.alt[0], profile.alt[1]);
+    const rcs = rnd(profile.rcs[0], profile.rcs[1]);
+    const turn = rnd(profile.turnDeg[0], profile.turnDeg[1])*(Math.PI/180);
+    const climb = rnd(profile.climb[0], profile.climb[1]);
+
+    return {x,y,hdg,v,alt,rcs,turnRate:turn,climbRate:climb};
+  }
+
+  function makePlan(pattern, spawn, profile){
+    const waypoints = [];
+    const toCity = Math.atan2(-spawn.y, -spawn.x);
+
+    if(pattern === 'LONE'){
+      // aim near city, then continue through
+      const miss = rnd(-3.5, 3.5);
+      const missAng = toCity + Math.PI/2;
+      const near = { x: Math.cos(toCity)*2.5 + Math.cos(missAng)*miss,
+                     y: Math.sin(toCity)*2.5 + Math.sin(missAng)*miss };
+      const far = { x: Math.cos(toCity+Math.PI)*120, y: Math.sin(toCity+Math.PI)*120 };
+      waypoints.push({x:spawn.x,y:spawn.y}, near, far);
+    } else if(pattern === 'CONVOY'){
+      // corridor approach: a knee then city then exit
+      const kneeR = rnd(28, 42);
+      const kneeAng = toCity + rnd(-0.35, 0.35);
+      const knee = {x: Math.cos(kneeAng)*kneeR, y: Math.sin(kneeAng)*kneeR};
+      const near = {x: Math.cos(toCity)*3.0, y: Math.sin(toCity)*3.0};
+      const out  = {x: Math.cos(toCity+Math.PI)*125, y: Math.sin(toCity+Math.PI)*125};
+      waypoints.push({x:spawn.x,y:spawn.y}, knee, near, out);
+    } else if(pattern === 'SCOUT'){
+      // circle around mid ring then decide inbound
+      const ring = rnd(32, 46);
+      const centerAng = toCity + rnd(-0.8, 0.8);
+      const p1 = {x: Math.cos(centerAng)*ring, y: Math.sin(centerAng)*ring};
+      const p2 = {x: Math.cos(centerAng+0.9)*ring, y: Math.sin(centerAng+0.9)*ring};
+      const p3 = {x: Math.cos(centerAng+1.8)*ring, y: Math.sin(centerAng+1.8)*ring};
+      const near = {x: Math.cos(toCity)*4.0, y: Math.sin(toCity)*4.0};
+      const out  = {x: Math.cos(toCity+Math.PI)*120, y: Math.sin(toCity+Math.PI)*120};
+      waypoints.push({x:spawn.x,y:spawn.y}, p1, p2, p3, near, out);
+    } else {
+      waypoints.push({x:spawn.x,y:spawn.y}, {x:0,y:0});
+    }
+
+    return {waypoints, group: 0};
+  }
+
+  function spawnWave(){
+    waveCounter++;
+    const pattern = pick(['CONVOY','LONE','SCOUT','LONE','CONVOY']);
+    const size = (pattern==='CONVOY') ? rndi(3,6) : (pattern==='SCOUT' ? rndi(1,2) : 1);
+
+    // choose profiles with weights
+    const weighted = [
+      PROFILES[0],PROFILES[0],PROFILES[1],
+      PROFILES[2],
+      PROFILES[3],
+      PROFILES[4]
+    ];
+    let groupId = waveCounter;
+
+    // one "lead" spawn, others near it (convoy)
+    const leadProfile = pick(weighted);
+    const leadSpawn = makeSpawnAtEdge(leadProfile);
+    const leadPlan = makePlan(pattern, leadSpawn, leadProfile);
+    leadPlan.group = groupId;
+
+    for(let i=0;i<size;i++){
+      const prof = (pattern==='CONVOY' && i>0) ? pick([leadProfile, PROFILES[0], PROFILES[1]]) : leadProfile;
+      const sp = (i===0) ? leadSpawn : (() => {
+        const s = makeSpawnAtEdge(prof);
+        // nudge near lead corridor
+        s.x = leadSpawn.x + rnd(-2.0, 2.0);
+        s.y = leadSpawn.y + rnd(-2.0, 2.0);
+        s.hdg = wrapAng(leadSpawn.hdg + rnd(-0.08, 0.08));
+        s.alt = clamp(leadSpawn.alt + rnd(-60, 60), prof.alt[0], prof.alt[1]);
+        s.v   = clamp(leadSpawn.v   + rnd(-6, 6),   prof.vms[0], prof.vms[1]);
+        s.rcs = clamp(leadSpawn.rcs * (1+rnd(-0.12,0.12)), prof.rcs[0], prof.rcs[1]);
+        return s;
+      })();
+
+      const plan = JSON.parse(JSON.stringify(leadPlan));
+      plan.group = groupId;
+      const t = new Target(prof, sp, plan);
+      targets.push(t);
+    }
+
+    logEvt(`Новая волна: <b>${pattern}</b> / контактов: <b>${size}</b>`, 'info');
+    beep(780, 0.07, 0.04);
+  }
+
+  function resetScenario(){
+    targets = [];
+    tracks.clear();
+    patrols = [new Patrol(), new Patrol(), new Patrol()];
+    simT = 0;
+    score = 0;
+    nextWave = 2;
+    waveCounter = 0;
+    wind = {x:0,y:0,tgtX:0,tgtY:0,t:0,next:0};
+
+    // start with a couple waves spaced
+    spawnWave();
+    spawnWave();
+    nextWave = 10;
+    logEvt('Сценарий сброшен.', 'ok');
+  }
+
+  // ---------- Tracking / Classification ----------
+  function ensureTrack(t){
+    let tr = tracks.get(t.uid);
+    if(!tr){
+      tr = new Track(t);
+      tracks.set(t.uid, tr);
+      logEvt(`Новый контакт → трасса создана (UID ${t.uid})`, 'warn');
+      beep(990, 0.06, 0.03);
+    }
+    return tr;
+  }
+
+  function classifyTrack(tr){
+    // use smoothed estimates
+    const v = tr.v;
+    const alt = tr.alt;
+    const rcs = tr.rcs;
+    const vv = tr.vv;
+    const man = tr.man;
+
+    // score candidates
+    const candidates = [];
+    for(const p of PROFILES){
+      // distance in feature space (normalized)
+      const vMid = (p.vms[0]+p.vms[1])*0.5;
+      const aMid = (p.alt[0]+p.alt[1])*0.5;
+      const rMid = (p.rcs[0]+p.rcs[1])*0.5;
+      const dv = Math.abs(v - vMid) / (p.vms[1]-p.vms[0] + 1e-6);
+      const da = Math.abs(alt - aMid) / (p.alt[1]-p.alt[0] + 1e-6);
+      const dr = Math.abs(rcs - rMid) / (p.rcs[1]-p.rcs[0] + 1e-6);
+
+      // maneuver & vertical hints
+      let bonus = 0;
+      if(p.key === 'GLIDER'){
+        if(vv < -2.0) bonus += 0.25;
+        if(alt > 700) bonus += 0.15;
+      }
+      if(p.key === 'BALLOON'){
+        if(v < 20) bonus += 0.25;
+        if(man < 2.0) bonus += 0.10;
+      }
+      if(p.key === 'CRUISE_T'){
+        if(v > 160) bonus += 0.25;
+        if(alt < 800) bonus += 0.10;
+        if(man < 6.0) bonus += 0.10;
+      }
+
+      const d = (dv*0.55 + da*0.30 + dr*0.35) - bonus;
+      candidates.push({p, d});
+    }
+    candidates.sort((a,b)=>a.d-b.d);
+    const best = candidates[0];
+    const second = candidates[1];
+
+    // confidence from separation + track quality + plots
+    const sep = clamp((second.d - best.d), 0, 0.8);
+    const q = tr.quality;
+    const pCount = clamp(tr.plots/14, 0, 1);
+    const conf = clamp(0.35 + sep*0.9 + q*0.35 + pCount*0.25, 0, 0.98);
+
+    tr.cls = best.p.label;
+    tr.conf = conf;
+
+    if(!tr.identified && conf > 0.62 && tr.plots >= 8){
+      tr.identified = true;
+      // assign 4-digit id (unique-ish)
+      let id4 = rndi(1000,9999);
+      // avoid duplicates
+      const used = new Set([...tracks.values()].filter(x=>x.id4).map(x=>x.id4));
+      while(used.has(id4)) id4 = rndi(1000,9999);
+      tr.id4 = id4;
+      logEvt(`Опознание: <b>${tr.id4}</b> / ${tr.cls} (conf ${Math.round(tr.conf*100)}%)`, 'ok');
+      beep(1320, 0.07, 0.035);
+    }
+  }
+
+  function issueAlert(tr){
+    if(!tr || tr.alerted) return;
+    tr.alerted = true;
+    tr.alertTime = simT;
+    score += 10;
+    logEvt(`Тревога по трассе ${tr.id4 ?? '----'} (UID ${tr.uid})`, 'warn');
+    beep(520, 0.10, 0.05);
+  }
+
+  function assignPatrol(tr){
+    if(!tr) return false;
+    const free = patrols.find(p=>!p.busy);
+    if(!free) return false;
+    free.assign(tr.tgt);
+    score += 5;
+    logEvt(`Патруль назначен на UID ${tr.uid}`, 'info');
+    beep(880, 0.06, 0.03);
+    return true;
+  }
+
+  // ---------- UI ----------
+  const el = (id)=>document.getElementById(id);
+
+  const ui = {
+    simTime: el('simTime'),
+    sweepRpm: el('sweepRpm'),
+    sweepPer: el('sweepPer'),
+    rng: el('rng'),
+    noise: el('noise'),
+    wind: el('wind'),
+    ct: el('ct'),
+    tr: el('tr'),
+    pat: el('pat'),
+    list: el('list'),
+    selKv: el('selKv'),
+    dotThreat: el('dotThreat'),
+    threatState: el('threatState'),
+    score: el('score'),
+    zoomTxt: el('zoomTxt'),
+    autoTxt: el('autoTxt'),
+    autoClTxt: el('autoClTxt'),
+    dotPause: el('dotPause'),
+    pauseState: el('pauseState'),
+    dotSys: el('dotSys'),
+    sysState: el('sysState'),
+    logbox: el('logbox'),
+    btnAuto: el('btnAuto'),
+    btnClass: el('btnClass'),
+    btnAlert: el('btnAlert'),
+    btnPatrol: el('btnPatrol'),
+    btnDrop: el('btnDrop'),
+    btnZoomIn: el('btnZoomIn'),
+    btnZoomOut: el('btnZoomOut'),
+    btnReset: el('btnReset'),
+    btnMute: el('btnMute')
+  };
+
+  function pad2(n){ return n.toString().padStart(2,'0'); }
+  function fmtTime(t){
+    const h = Math.floor(t/3600);
+    const m = Math.floor((t%3600)/60);
+    const s = Math.floor(t%60);
+    return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+  }
+
+  const LOG_MAX = 120;
+  function logEvt(html, kind='info'){
+    const time = fmtTime(simT);
+    const icon = (kind==='bad') ? '✖' : (kind==='warn') ? '⚠' : (kind==='ok') ? '✓' : '•';
+    const div = document.createElement('div');
+    div.className = 'logline';
+    div.innerHTML = `<span class="mono">[${time}]</span> ${icon} ${html}`;
+    ui.logbox.prepend(div);
+    while(ui.logbox.children.length > LOG_MAX) ui.logbox.removeChild(ui.logbox.lastChild);
+  }
+
+  // ---------- Rendering ----------
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { alpha:false });
+
+  let W=0, H=0, DPR=1;
+
+  // radar view params
+  let zoom = 1.0;
+  let radarCenter = { x: 0, y: 0 }; // pixels set in resize
+  let radarR = 100;                // pixels set in resize
+  let pxPerKm = 1;
+
+  function resize(){
+    DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    W = Math.floor(window.innerWidth * DPR);
+    H = Math.floor(window.innerHeight * DPR);
+    canvas.width = W;
+    canvas.height = H;
+
+    // place radar slightly left of center if right panel present
+    const rightPanelVisible = window.innerWidth > 980;
+    const offsetX = rightPanelVisible ? -window.innerWidth*0.12 : 0;
+    radarCenter.x = (window.innerWidth*0.5 + offsetX) * DPR;
+    radarCenter.y = (window.innerHeight*0.52) * DPR;
+
+    radarR = Math.min(window.innerHeight*0.42, window.innerWidth*(rightPanelVisible?0.36:0.46)) * DPR;
+    // px per km depends on zoom and instrumented range
+    pxPerKm = (radarR / WORLD.radarRangeKm) * zoom;
+  }
+  window.addEventListener('resize', resize);
+
+  function worldToPx(xKm, yKm){
+    return {
+      x: radarCenter.x + xKm * pxPerKm,
+      y: radarCenter.y + yKm * pxPerKm
+    };
+  }
+
+  function pxToWorld(px, py){
+    return {
+      x: (px - radarCenter.x) / pxPerKm,
+      y: (py - radarCenter.y) / pxPerKm
+    };
+  }
+
+  function drawBackground(){
+    ctx.fillStyle = '#05080a';
+    ctx.fillRect(0,0,W,H);
+
+    // subtle vignette
+    const g = ctx.createRadialGradient(radarCenter.x, radarCenter.y, radarR*0.1, radarCenter.x, radarCenter.y, radarR*1.35);
+    g.addColorStop(0, '#07110f');
+    g.addColorStop(0.6, '#05080a');
+    g.addColorStop(1, '#020405');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  function drawRadarGrid(radar){
+    // outer circle
+    ctx.save();
+    ctx.translate(radarCenter.x, radarCenter.y);
+
+    // rings
+    const rings = [1.0, WORLD.midRingKm/WORLD.radarRangeKm, WORLD.innerRingKm/WORLD.radarRangeKm, WORLD.cityDangerKm/WORLD.radarRangeKm];
+    for(let i=0;i<8;i++){
+      const rr = radarR*(i/8);
+      ctx.beginPath();
+      ctx.arc(0,0,rr,0,TAU);
+      ctx.strokeStyle = `rgba(15,42,38,${0.35 - i*0.03})`;
+      ctx.lineWidth = 1*DPR;
+      ctx.stroke();
+    }
+
+    for(const r of rings){
+      const rr = radarR*r;
+      ctx.beginPath();
+      ctx.arc(0,0,rr,0,TAU);
+      ctx.strokeStyle = r === (WORLD.cityDangerKm/WORLD.radarRangeKm) ? 'rgba(255,91,122,0.45)'
+                     : r === (WORLD.innerRingKm/WORLD.radarRangeKm) ? 'rgba(255,211,106,0.33)'
+                     : 'rgba(34,243,182,0.18)';
+      ctx.lineWidth = 1.2*DPR;
+      ctx.stroke();
+    }
+
+    // cross lines
+    ctx.strokeStyle = 'rgba(15,42,38,0.42)';
+    ctx.lineWidth = 1*DPR;
+    for(let i=0;i<4;i++){
+      const a = i*TAU/4;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*radarR, Math.sin(a)*radarR);
+      ctx.lineTo(Math.cos(a+Math.PI)*radarR, Math.sin(a+Math.PI)*radarR);
+      ctx.stroke();
+    }
+
+    // labels
+    ctx.fillStyle = 'rgba(102,191,163,0.75)';
+    ctx.font = `${11*DPR}px ${getComputedStyle(document.body).fontFamily}`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+
+    const ringLabels = [
+      {km: WORLD.radarRangeKm, r: 1.0},
+      {km: WORLD.midRingKm,   r: WORLD.midRingKm/WORLD.radarRangeKm},
+      {km: WORLD.innerRingKm, r: WORLD.innerRingKm/WORLD.radarRangeKm}
+    ];
+    for(const rl of ringLabels){
+      const rr = radarR*rl.r;
+      ctx.fillText(`${rl.km} km`, rr + 8*DPR, 0);
+    }
+
+    // city marker
+    ctx.beginPath();
+    ctx.arc(0,0,3.2*DPR,0,TAU);
+    ctx.fillStyle = 'rgba(34,243,182,0.85)';
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawSweep(radar){
+    ctx.save();
+    ctx.translate(radarCenter.x, radarCenter.y);
+
+    const a = radar.ang;
+    // beam gradient wedge
+    const len = radarR;
+    const beamW = radar.beam * 3.2; // wider glow than actual detection beam
+    const steps = 26;
+    for(let i=0;i<steps;i++){
+      const t = i/(steps-1);
+      const aa = a - beamW + t*(beamW*2);
+      const alpha = Math.pow(1 - Math.abs(t-0.5)*2, 1.6) * 0.11;
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.lineTo(Math.cos(aa)*len, Math.sin(aa)*len);
+      ctx.strokeStyle = `rgba(34,243,182,${alpha})`;
+      ctx.lineWidth = 2.0*DPR;
+      ctx.stroke();
+    }
+
+    // main sweep line
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(Math.cos(a)*len, Math.sin(a)*len);
+    ctx.strokeStyle = 'rgba(34,243,182,0.75)';
+    ctx.lineWidth = 1.4*DPR;
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawTracks(){
+    // draw fading trails first
+    for(const tr of tracks.values()){
+      if(!tr.tgt.alive) continue;
+
+      // hist line
+      if(tr.hist.length >= 2){
+        for(let i=1;i<tr.hist.length;i++){
+          const p0 = tr.hist[i-1], p1 = tr.hist[i];
+          const age = simT - p1.t;
+          const a = clamp(1 - age/40, 0, 1);
+          const col = tr.alerted ? `rgba(255,211,106,${0.22*a})` : `rgba(34,243,182,${0.18*a})`;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = (1.2 + 1.0*tr.quality)*DPR;
+          ctx.beginPath();
+          const s0 = worldToPx(p0.x,p0.y);
+          const s1 = worldToPx(p1.x,p1.y);
+          ctx.moveTo(s0.x, s0.y);
+          ctx.lineTo(s1.x, s1.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // draw current symbols & labels
+    for(const tr of tracks.values()){
+      const t = tr.tgt;
+      if(!t.alive) continue;
+
+      const p = worldToPx(tr.x, tr.y);
+      const rKm = Math.hypot(tr.x, tr.y);
+      const inRange = rKm <= WORLD.radarRangeKm*1.05;
+
+      if(!inRange) continue;
+
+      // symbol size from quality
+      const sz = (3.0 + tr.quality*4.5)*DPR;
+      const glow = (10 + tr.quality*18)*DPR;
+
+      // danger color
+      const danger = tr.dangerLevel();
+      let core = 'rgba(34,243,182,0.9)';
+      let halo = 'rgba(34,243,182,0.18)';
+      if(danger==='HIGH'){ core='rgba(255,211,106,0.95)'; halo='rgba(255,211,106,0.22)'; }
+      if(danger==='CRITICAL'){ core='rgba(255,91,122,0.95)'; halo='rgba(255,91,122,0.22)'; }
+      if(tr.alerted){ halo = 'rgba(255,211,106,0.28)'; }
+
+      // glow
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,glow,0,TAU);
+      ctx.fillStyle = halo;
+      ctx.fill();
+
+      // core dot
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,sz,0,TAU);
+      ctx.fillStyle = core;
+      ctx.fill();
+
+      // heading tick
+      const a = tr.hdg;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + Math.cos(a)*18*DPR, p.y + Math.sin(a)*18*DPR);
+      ctx.strokeStyle = 'rgba(34,243,182,0.35)';
+      ctx.lineWidth = 1.2*DPR;
+      ctx.stroke();
+
+      // label after identification
+      if(tr.identified){
+        ctx.fillStyle = 'rgba(184,255,232,0.85)';
+        ctx.font = `${11*DPR}px ${getComputedStyle(document.body).fontFamily}`;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+        const txt = `${tr.id4} ${tr.cls}`;
+        ctx.fillText(txt, p.x + 10*DPR, p.y - 6*DPR);
+      }
+    }
+  }
+
+  function drawPatrols(){
+    for(const p of patrols){
+      if(!p.busy) continue;
+      const s = worldToPx(p.x, p.y);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 4.0*DPR, 0, TAU);
+      ctx.fillStyle = 'rgba(140,255,177,0.9)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 12*DPR, 0, TAU);
+      ctx.strokeStyle = 'rgba(140,255,177,0.18)';
+      ctx.lineWidth = 1.2*DPR;
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(215,255,227,0.8)';
+      ctx.font = `${10*DPR}px ${getComputedStyle(document.body).fontFamily}`;
+      ctx.textAlign = 'left'; ctx.textBaseline='top';
+      ctx.fillText(`PATROL ${p.stage}`, s.x+10*DPR, s.y+6*DPR);
+    }
+  }
+
+  function drawSelection(){
+    if(!selected) return;
+    const tr = selected;
+    if(!tr.tgt.alive) return;
+    const p = worldToPx(tr.x, tr.y);
+
+    // reticle
+    ctx.save();
+    ctx.strokeStyle = 'rgba(45,240,192,0.85)';
+    ctx.lineWidth = 1.6*DPR;
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,18*DPR,0,TAU);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(p.x-26*DPR, p.y);
+    ctx.lineTo(p.x-10*DPR, p.y);
+    ctx.moveTo(p.x+10*DPR, p.y);
+    ctx.lineTo(p.x+26*DPR, p.y);
+    ctx.moveTo(p.x, p.y-26*DPR);
+    ctx.lineTo(p.x, p.y-10*DPR);
+    ctx.moveTo(p.x, p.y+10*DPR);
+    ctx.lineTo(p.x, p.y+26*DPR);
+    ctx.stroke();
+    ctx.restore();
+
+    // predicted short vector (purely visual)
+    const kmps = tr.v/1000;
+    const predT = 8; // seconds
+    const px = worldToPx(tr.x + Math.cos(tr.hdg)*kmps*predT, tr.y + Math.sin(tr.hdg)*kmps*predT);
+    ctx.save();
+    ctx.setLineDash([6*DPR,6*DPR]);
+    ctx.strokeStyle = 'rgba(45,240,192,0.35)';
+    ctx.lineWidth = 1.2*DPR;
+    ctx.beginPath();
+    ctx.moveTo(p.x,p.y);
+    ctx.lineTo(px.x,px.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------- Interaction ----------
+  let selected = null;
+  let mouse = {x:0,y:0};
+  let dragging = false;
+
+  function pickTrackAt(px,py){
+    // choose closest track within threshold
+    const w = pxToWorld(px,py);
+    let best = null;
+    let bestD = 999;
+    for(const tr of tracks.values()){
+      if(!tr.tgt.alive) continue;
+      const d = dist(w.x,w.y,tr.x,tr.y);
+      if(d < bestD && d < 2.4/zoom) { bestD=d; best=tr; } // km threshold
+    }
+    return best;
+  }
+
+  function updateSelectedPanel(){
+    // buttons
+    const has = !!selected;
+    ui.btnClass.disabled = !has;
+    ui.btnAlert.disabled = !has || (has && selected.alerted);
+    ui.btnPatrol.disabled = !has || patrols.every(p=>p.busy);
+
+    // kv
+    const rows = ui.selKv.querySelectorAll('.v');
+    if(!has){
+      rows.forEach((n)=>n.textContent='—');
+      return;
+    }
+    const tr = selected;
+    const rKm = Math.hypot(tr.x,tr.y);
+    const spd = tr.v;
+    const kmh = spd*3.6;
+    const hdgDeg = wrapAng(tr.hdg)*(180/Math.PI);
+    const q = tr.quality;
+    const dang = tr.dangerLevel();
+
+    const idTxt = tr.identified ? `${tr.id4}` : '----';
+    const clsTxt = tr.identified ? `${tr.cls} (${Math.round(tr.conf*100)}%)` : `— (накопление)`;
+    const rTxt = `${fmt1(rKm)} км`;
+    const sTxt = `${fmt1(spd)} м/с / ${fmt0(kmh)} км/ч`;
+    const aTxt = `${fmt0(tr.alt)} м (vv ${fmt1(tr.vv)} м/с)`;
+    const rcsTxt = `${fmt2(tr.rcs)} м²`;
+    const hTxt = `${fmt0(hdgDeg)}° (манёвр ~${fmt1(tr.man)}°/с)`;
+    const qTxt = `${Math.round(q*100)}% / plots ${tr.plots}`;
+    const dTxt = `${dang}${tr.alerted ? ' / ALERTED' : ''}`;
+
+    rows[0].textContent = idTxt;
+    rows[1].textContent = clsTxt;
+    rows[2].textContent = rTxt;
+    rows[3].textContent = sTxt;
+    rows[4].textContent = aTxt;
+    rows[5].textContent = rcsTxt;
+    rows[6].textContent = hTxt;
+    rows[7].textContent = qTxt;
+    rows[8].textContent = dTxt;
+  }
+
+  function rebuildList(){
+    // sort by danger (range)
+    const arr = [...tracks.values()].filter(tr=>tr.tgt.alive);
+    arr.sort((a,b)=>Math.hypot(a.x,a.y)-Math.hypot(b.x,b.y));
+
+    ui.list.innerHTML = '';
+    for(const tr of arr){
+      const rKm = Math.hypot(tr.x,tr.y);
+      const danger = tr.dangerLevel();
+      const pillClass = (danger==='CRITICAL')?'bad':(danger==='HIGH')?'warn':(danger==='LOW')?'ok':'';
+      const idTxt = tr.identified ? tr.id4 : '----';
+      const cls = tr.identified ? tr.cls : 'неопозн.';
+      const q = Math.round(tr.quality*100);
+
+      const row = document.createElement('div');
+      row.className = 'row' + (selected && selected.uid===tr.uid ? ' sel':'');
+      row.innerHTML = `
+        <div class="mono"><b>${idTxt}</b></div>
+        <div><span class="pill ${pillClass}">${danger}</span> <span class="mono">${cls}</span></div>
+        <div class="mono">${fmt1(rKm)}км</div>
+        <div class="mono">${q}%</div>
+      `;
+      row.addEventListener('click', ()=>{
+        selected = tr;
+        updateSelectedPanel();
+        rebuildList();
+      });
+      ui.list.appendChild(row);
+    }
+  }
+
+  // Mouse controls
+  canvas.addEventListener('mousemove', (e)=>{
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = (e.clientX - rect.left) * DPR;
+    mouse.y = (e.clientY - rect.top) * DPR;
+  });
+
+  canvas.addEventListener('mousedown', (e)=>{
+    if(e.button===0){
+      const rect = canvas.getBoundingClientRect();
+      const px = (e.clientX - rect.left) * DPR;
+      const py = (e.clientY - rect.top) * DPR;
+      // check inside radar circle
+      const dx = px - radarCenter.x;
+      const dy = py - radarCenter.y;
+      if(Math.hypot(dx,dy) <= radarR){
+        const tr = pickTrackAt(px,py);
+        if(tr){
+          selected = tr;
+          updateSelectedPanel();
+          rebuildList();
+          beep(880, 0.04, 0.02);
+        }
+      }
+    }
+    if(e.button===2){
+      // right click: just deselect for simplicity
+      selected = null;
+      updateSelectedPanel();
+      rebuildList();
+      e.preventDefault();
+    }
+  });
+
+  canvas.addEventListener('contextmenu', (e)=>e.preventDefault());
+
+  canvas.addEventListener('wheel', (e)=>{
+    const delta = Math.sign(e.deltaY);
+    if(delta>0) zoom = clamp(zoom*0.92, 0.6, 2.2);
+    else zoom = clamp(zoom*1.08, 0.6, 2.2);
+    pxPerKm = (radarR / WORLD.radarRangeKm) * zoom;
+    ui.zoomTxt.textContent = `${zoom.toFixed(2)}×`;
+    e.preventDefault();
+  }, {passive:false});
+
+  // Keyboard
+  window.addEventListener('keydown', (e)=>{
+    if(e.key === ' '){
+      paused = !paused;
+      ui.pauseState.textContent = paused ? 'PAUSE' : 'RUN';
+      ui.dotPause.className = 'dot' + (paused ? ' warn':'');
+      beep(paused?420:720, 0.06, 0.03);
+      e.preventDefault();
+    } else if(e.key.toLowerCase()==='a'){
+      WORLD.autoTrack = !WORLD.autoTrack;
+      ui.autoTxt.textContent = WORLD.autoTrack ? 'ON' : 'OFF';
+      beep(WORLD.autoTrack?760:380, 0.05, 0.02);
+    } else if(e.key.toLowerCase()==='c'){
+      if(selected) classifyTrack(selected);
+    } else if(e.key.toLowerCase()==='e'){
+      if(selected) issueAlert(selected);
+    } else if(e.key.toLowerCase()==='p'){
+      if(selected) assignPatrol(selected);
+    } else if(e.key === 'Escape'){
+      selected = null;
+      updateSelectedPanel();
+      rebuildList();
+    }
+  });
+
+  // Buttons
+  ui.btnAuto.addEventListener('click', ()=>{ WORLD.autoTrack = !WORLD.autoTrack; ui.autoTxt.textContent = WORLD.autoTrack?'ON':'OFF'; });
+  ui.btnClass.addEventListener('click', ()=>{ if(selected) classifyTrack(selected); });
+  ui.btnAlert.addEventListener('click', ()=>{ if(selected) issueAlert(selected); });
+  ui.btnPatrol.addEventListener('click', ()=>{ if(selected) assignPatrol(selected); });
+  ui.btnDrop.addEventListener('click', ()=>{ selected=null; updateSelectedPanel(); rebuildList(); });
+
+  ui.btnZoomIn.addEventListener('click', ()=>{ zoom=clamp(zoom*1.10,0.6,2.2); pxPerKm=(radarR/WORLD.radarRangeKm)*zoom; ui.zoomTxt.textContent=`${zoom.toFixed(2)}×`; });
+  ui.btnZoomOut.addEventListener('click', ()=>{ zoom=clamp(zoom*0.91,0.6,2.2); pxPerKm=(radarR/WORLD.radarRangeKm)*zoom; ui.zoomTxt.textContent=`${zoom.toFixed(2)}×`; });
+  ui.btnReset.addEventListener('click', resetScenario);
+  ui.btnMute.addEventListener('click', ()=>{
+    soundOn = !soundOn;
+    ui.btnMute.textContent = `SOUND: ${soundOn?'ON':'OFF'}`;
+    beep(600, 0.05, 0.02);
+  });
+
+  // ---------- Main Loop ----------
+  const radar = new Radar();
+
+  function updateUI(){
+    ui.simTime.textContent = fmtTime(simT);
+    ui.sweepRpm.textContent = WORLD.sweepRpm.toFixed(1);
+    const per = 60/WORLD.sweepRpm;
+    ui.sweepPer.textContent = per.toFixed(1);
+    ui.rng.textContent = WORLD.radarRangeKm;
+    ui.noise.textContent = WORLD.noiseMode;
+    ui.wind.textContent = `${fmt1(wind.x)} / ${fmt1(wind.y)} м/с`;
+    ui.ct.textContent = targets.filter(t=>t.alive).length;
+    ui.tr.textContent = [...tracks.values()].filter(tr=>tr.tgt.alive).length;
+    ui.pat.textContent = patrols.filter(p=>!p.busy).length;
+    ui.score.textContent = `SCORE ${score}`;
+
+    ui.autoTxt.textContent = WORLD.autoTrack ? 'ON' : 'OFF';
+    ui.autoClTxt.textContent = WORLD.autoClassify ? 'ON' : 'OFF';
+
+    updateSelectedPanel();
+  }
+
+  function threatSummary(){
+    // count how many are inside inner ring and inbound
+    let inb = 0, critical = 0;
+    for(const tr of tracks.values()){
+      const t = tr.tgt;
+      if(!t.alive) continue;
+      const r = Math.hypot(tr.x,tr.y);
+      if(t.intent==='INBOUND' && r < WORLD.innerRingKm) inb++;
+      if(t.intent==='INBOUND' && r < WORLD.cityDangerKm*2) critical++;
+    }
+    if(critical>0){
+      ui.threatState.textContent = `CRITICAL (${critical})`;
+      ui.dotThreat.className = 'dot bad';
+      ui.sysState.textContent = 'SYS ALERT';
+      ui.dotSys.className = 'dot warn';
+    }else if(inb>0){
+      ui.threatState.textContent = `HIGH (${inb})`;
+      ui.dotThreat.className = 'dot warn';
+      ui.sysState.textContent = 'SYS WATCH';
+      ui.dotSys.className = 'dot ok';
+    }else{
+      ui.threatState.textContent = 'MONITORING';
+      ui.dotThreat.className = 'dot';
+      ui.sysState.textContent = 'SYS NOMINAL';
+      ui.dotSys.className = 'dot ok';
+    }
+  }
+
+  function simStep(dt){
+    simT += dt;
+
+    updateWind(dt);
+    radar.rpm = WORLD.sweepRpm;
+    radar.update(dt);
+
+    // spawn waves
+    nextWave -= dt;
+    if(nextWave <= 0){
+      spawnWave();
+      nextWave = rnd(14, 22); // easy pacing
+    }
+
+    // update targets
+    for(const t of targets){
+      if(!t.alive) continue;
+
+      // if it has been escorted, let it leave; else keep inbound plan
+      if(t.intent === 'EXIT'){
+        // change desired heading naturally toward exit waypoint
+      }
+
+      t.update(dt);
+
+      // kill if far outside
+      if(t.rangeKm() > WORLD.radarRangeKm*1.35){
+        t.alive = false;
+        const tr = tracks.get(t.uid);
+        if(tr) score += 2;
+        continue;
+      }
+
+      // if reaches city radius while inbound -> incident
+      if(t.checkCity()){
+        t.alive = false;
+        const tr = tracks.get(t.uid);
+        const wasAlerted = tr ? tr.alerted : false;
+        const penalty = wasAlerted ? 6 : 18;
+        score -= penalty;
+        logEvt(`Инцидент в зоне города (UID ${t.uid}) ${wasAlerted?'<b>(тревога была)</b>':'<b>(без тревоги)</b>'} → −${penalty}`, 'bad');
+        beep(180, 0.18, 0.06);
+      }
+    }
+
+    // update patrols
+    for(const p of patrols) p.update(dt);
+
+    // radar detection pass: generate plots on sweep
+    for(const t of targets){
+      if(!t.alive) continue;
+
+      const plot = radar.tryDetect(t);
+      if(!plot) continue;
+
+      // auto track creates/updates tracks
+      if(WORLD.autoTrack){
+        const tr = ensureTrack(t);
+
+        tr.lastPlot = simT;
+        tr.lastSeen = simT;
+        tr.plots++;
+
+        // convert plot polar to xy (km)
+        const brg = (plot.brg_deg*(Math.PI/180));
+        const rKm = plot.rng_m/1000;
+        const mx = Math.cos(brg) * rKm;
+        const my = Math.sin(brg) * rKm;
+
+        // update estimate (alpha-beta-ish smoothing)
+        const aPos = 0.35 + tr.quality*0.25;
+        const aAlt = 0.30 + tr.quality*0.25;
+        const aSpd = 0.25 + tr.quality*0.20;
+        const aRcs = 0.18 + tr.quality*0.18;
+
+        const prevX = tr.x, prevY = tr.y, prevAlt = tr.alt, prevHdg = tr.hdg;
+
+        tr.x = lerp(tr.x, mx, aPos);
+        tr.y = lerp(tr.y, my, aPos);
+        tr.alt = lerp(tr.alt, plot.alt, aAlt);
+        tr.v   = lerp(tr.v,   plot.spd, aSpd);
+        tr.rcs = lerp(tr.rcs, plot.rcs, aRcs);
+
+        // derive heading from successive positions when possible
+        const dx = tr.x - prevX;
+        const dy = tr.y - prevY;
+        if(dx*dx+dy*dy > 0.0004){ // ~20m in km units
+          tr.hdg = wrapAng(Math.atan2(dy, dx));
+        } else {
+          tr.hdg = lerp(tr.hdg, t.hdg, 0.05);
+        }
+
+        tr.vv = lerp(tr.vv, (tr.alt - prevAlt)/Math.max(dt,1e-6), 0.25);
+        tr.man = lerp(tr.man, t.maneuverRate, 0.25);
+
+        tr.pushHist(tr.x, tr.y);
+
+        // quality increases with consistent plots; decays otherwise
+        tr.quality = clamp(tr.quality + 0.08, 0, 1);
+
+        // auto classification
+        if(WORLD.autoClassify && tr.plots>=6 && (!tr.identified || tr.conf < 0.85)){
+          classifyTrack(tr);
+        }
+
+        // auto warning beep near inner ring
+        const r = Math.hypot(tr.x,tr.y);
+        if(t.intent==='INBOUND' && r < WORLD.innerRingKm && (simT - tr.lastWarn > 6)){
+          tr.lastWarn = simT;
+          beep(420, 0.09, 0.03);
+        }
+      }
+    }
+
+    // decay quality if not seen
+    for(const tr of tracks.values()){
+      const t = tr.tgt;
+      if(!t.alive) continue;
+      const dtSeen = simT - tr.lastPlot;
+      if(dtSeen > 1.0){
+        tr.quality = clamp(tr.quality - 0.020*dt*(1+dtSeen*0.06), 0, 1);
+        // prediction drift (simple) — keeps track moving plausibly between plots
+        const kmps = tr.v/1000;
+        tr.x += Math.cos(tr.hdg) * kmps * dt;
+        tr.y += Math.sin(tr.hdg) * kmps * dt;
+
+        // mild altitude & rcs drift
+        tr.alt += tr.vv * dt * 0.12;
+        tr.rcs = Math.max(0.001, tr.rcs * (1 + randn()*0.001));
+
+        tr.pushHist(tr.x, tr.y);
+      }
+    }
+
+    // cleanup dead
+    for(const t of targets){
+      if(!t.alive){
+        // keep its track for a bit? (optional)
+      }
+    }
+  }
+
+  let last = performance.now();
+  function frame(now){
+    const dtReal = Math.min(0.050, (now-last)/1000);
+    last = now;
+    const dt = paused ? 0 : dtReal;
+
+    if(dt>0){
+      // run small substeps for stability
+      const steps = Math.max(1, Math.floor(dt/0.016));
+      const sub = dt/steps;
+      for(let i=0;i<steps;i++) simStep(sub);
+    }
+
+    // render
+    drawBackground();
+    drawRadarGrid(radar);
+    drawTracks();
+    drawPatrols();
+    drawSweep(radar);
+    drawSelection();
+
+    // UI refresh (throttled lightly)
+    if((Math.floor(now/120) !== Math.floor((now-dtReal*1000)/120))){
+      updateUI();
+      threatSummary();
+      rebuildList();
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- Boot ----------
+  resize();
+  ui.zoomTxt.textContent = `${zoom.toFixed(2)}×`;
+  ui.autoTxt.textContent = WORLD.autoTrack ? 'ON' : 'OFF';
+  ui.autoClTxt.textContent = WORLD.autoClassify ? 'ON' : 'OFF';
+  ui.noise.textContent = WORLD.noiseMode;
+
+  logEvt('Консоль активна. Обзор по кругу, отметки появляются по проходу луча.', 'info');
+  resetScenario();
+  requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
