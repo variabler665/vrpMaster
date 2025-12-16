@@ -173,12 +173,13 @@
           <div class="k">ДАЛЬНОСТЬ РЛС</div><div class="v"><span id="rng">90</span> км / шум <span id="noise">LOW</span></div>
           <div class="k">ВЕТЕР (низк.)</div><div class="v"><span id="wind">—</span></div>
           <div class="k">КОНТАКТЫ</div><div class="v"><span id="ct">0</span> (из них трасс: <span id="tr">0</span>)</div>
+          <div class="k">ПУСКИ ПВО</div><div class="v">в полёте: <span id="sam">0</span></div>
           <div class="k">ПАТРУЛИ</div><div class="v"><span id="pat">3</span> доступно</div>
         </div>
         <div class="sep"></div>
         <div class="small">
-          ЛКМ по отметке — выбрать. Колёсико — зум. ПКМ — “центр на городе”.
-          <br/>Горячие клавиши: <b>Space</b> пауза, <b>A</b> авто-ведение, <b>C</b> классифицировать, <b>E</b> тревога, <b>P</b> назначить патруль, <b>Esc</b> снять выбор.
+          ЛКМ по отметке — выбрать. Колёсико — зум по курсору. ПКМ — “центр на городе”.
+          <br/>Горячие клавиши: <b>Space</b> пауза, <b>A</b> авто-ведение, <b>C</b> классифицировать, <b>E</b> тревога, <b>P</b> назначить патруль, <b>F</b> пуск ПВО, <b>Esc</b> снять выбор.
         </div>
       </div>
     </div>
@@ -212,6 +213,7 @@
             <button class="primary" id="btnAuto">AUTO-TRACK (A)</button>
             <button id="btnClass">CLASSIFY (C)</button>
             <button id="btnAlert">ISSUE ALERT (E)</button>
+            <button id="btnFire">LAUNCH SAM (F)</button>
             <button id="btnPatrol">ASSIGN PATROL (P)</button>
             <button class="danger" id="btnDrop">DROP SELECT (ESC)</button>
           </div>
@@ -244,7 +246,7 @@
           <button id="btnMute">SOUND: ON</button>
         </div>
         <div class="small" style="margin-top:10px;">
-          Подсказка: не “стреляем” — тут задача оператора РЛС: обнаружить, сопровождать, классифицировать, поднять тревогу, направить патруль.
+          Подсказка: при хорошем сопровождении можно выполнить пуск (F) — но трассы всё равно нужно сопровождать, классифицировать и вовремя поднимать тревогу.
         </div>
       </div>
     </div>
@@ -402,6 +404,8 @@
 
       this.intent = 'INBOUND';
       this.group = plan.group || 0;
+      this.attackPoint = plan.attackPoint || {x:0,y:0};
+      this.attackRun = false;
 
       this.age = 0;
       this.alive = true;
@@ -433,6 +437,16 @@
       // apply behavior modes (desired speed/alt, gentle changes)
       const prof = this.profile;
       const mode = prof.behavior;
+      const rangeNow = this.rangeKm();
+
+      if(!this.attackRun && this.intent==='INBOUND' && rangeNow < WORLD.innerRingKm*1.15){
+        this.attackRun = true;
+        this.plan.waypoints = [{x:this.x,y:this.y}, this.attackPoint];
+        this.wpIdx = 0;
+        this.v = Math.max(this.v, prof.vms[1]*0.85);
+        logEvt(`Цель UID ${this.uid} зашла на атаку!`, 'warn');
+        beep(360, 0.07, 0.03);
+      }
 
       // wind scaling by altitude: low alt => stronger drift
       const lowFactor = clamp(1.0 - (this.alt/1400), 0.0, 1.0); // 0 above ~1400m
@@ -470,6 +484,9 @@
       } else if(mode === 'drift'){
         vTarget = clamp((prof.vms[0]+prof.vms[1])*0.5 + Math.sin(this.age*0.2)*0.4, prof.vms[0], prof.vms[1]);
       }
+      if(this.attackRun){
+        vTarget = Math.max(vTarget, prof.vms[1]*0.95);
+      }
       this.v = lerp(this.v, vTarget, 1 - Math.exp(-dt*0.35));
 
       // altitude controller
@@ -489,6 +506,10 @@
         altTarget = lerp(high, low, dive);
       } else if(mode === 'drift'){
         altTarget = clamp((prof.alt[0]+prof.alt[1])*0.5 + Math.sin(this.age*0.15)*35, prof.alt[0], prof.alt[1]);
+      }
+
+      if(this.attackRun){
+        altTarget = Math.max(altTarget * 0.85, 120);
       }
 
       // if escorted, it will leave: climb a bit & steer away
@@ -605,6 +626,7 @@
       this.id4 = null;
       this.cls = '—';
       this.conf = 0.0;
+      this.lastWarn = -1e9;
 
       this.alerted = false;
       this.alertTime = null;
@@ -694,6 +716,7 @@
   let targets = [];
   let tracks = new Map(); // uid -> Track
   let patrols = [new Patrol(), new Patrol(), new Patrol()];
+  let missiles = [];
 
   let simT = 0;
   let paused = false;
@@ -726,6 +749,10 @@
   function makePlan(pattern, spawn, profile){
     const waypoints = [];
     const toCity = Math.atan2(-spawn.y, -spawn.x);
+    const attackPoint = {
+      x: Math.cos(toCity) * rnd(0.6, 1.4) + Math.cos(toCity + Math.PI/2) * rnd(-0.6, 0.6),
+      y: Math.sin(toCity) * rnd(0.6, 1.4) + Math.sin(toCity + Math.PI/2) * rnd(-0.6, 0.6)
+    };
 
     if(pattern === 'LONE'){
       // aim near city, then continue through
@@ -757,7 +784,7 @@
       waypoints.push({x:spawn.x,y:spawn.y}, {x:0,y:0});
     }
 
-    return {waypoints, group: 0};
+    return {waypoints, group: 0, attackPoint};
   }
 
   function spawnWave(){
@@ -800,7 +827,18 @@
       targets.push(t);
     }
 
-    logEvt(`Новая волна: <b>${pattern}</b> / контактов: <b>${size}</b>`, 'info');
+    // sprinkle additional lone contacts for variety
+    const loneExtras = rndi(0,2);
+    for(let i=0;i<loneExtras;i++){
+      const prof = pick(PROFILES);
+      const sp = makeSpawnAtEdge(prof);
+      const plan = makePlan('LONE', sp, prof);
+      plan.group = 0;
+      targets.push(new Target(prof, sp, plan));
+    }
+
+    const totalCount = size + loneExtras;
+    logEvt(`Новая волна: <b>${pattern}</b> / контактов: <b>${totalCount}</b>`, 'info');
     beep(780, 0.07, 0.04);
   }
 
@@ -808,11 +846,13 @@
     targets = [];
     tracks.clear();
     patrols = [new Patrol(), new Patrol(), new Patrol()];
+    missiles = [];
     simT = 0;
     score = 0;
     nextWave = 2;
     waveCounter = 0;
     wind = {x:0,y:0,tgtX:0,tgtY:0,t:0,next:0};
+    viewCenter = {x:0,y:0};
 
     // start with a couple waves spaced
     spawnWave();
@@ -917,6 +957,18 @@
     return true;
   }
 
+  function launchMissile(tr){
+    if(!canFireAt(tr)){
+      beep(240, 0.05, 0.02);
+      return false;
+    }
+    const m = new Missile(tr.tgt);
+    missiles.push(m);
+    logEvt(`Пуск ракеты по UID ${tr.uid} (дистанция ${fmt1(Math.hypot(tr.x,tr.y))} км)`, 'warn');
+    beep(620, 0.08, 0.05);
+    return true;
+  }
+
   // ---------- UI ----------
   const el = (id)=>document.getElementById(id);
 
@@ -929,6 +981,7 @@
     wind: el('wind'),
     ct: el('ct'),
     tr: el('tr'),
+    sam: el('sam'),
     pat: el('pat'),
     list: el('list'),
     selKv: el('selKv'),
@@ -946,6 +999,7 @@
     btnAuto: el('btnAuto'),
     btnClass: el('btnClass'),
     btnAlert: el('btnAlert'),
+    btnFire: el('btnFire'),
     btnPatrol: el('btnPatrol'),
     btnDrop: el('btnDrop'),
     btnZoomIn: el('btnZoomIn'),
@@ -984,6 +1038,7 @@
   let radarCenter = { x: 0, y: 0 }; // pixels set in resize
   let radarR = 100;                // pixels set in resize
   let pxPerKm = 1;
+  let viewCenter = { x: 0, y: 0 }; // world km offset for zoom/pan
 
   function resize(){
     DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -1001,21 +1056,94 @@
     radarR = Math.min(window.innerHeight*0.42, window.innerWidth*(rightPanelVisible?0.36:0.46)) * DPR;
     // px per km depends on zoom and instrumented range
     pxPerKm = (radarR / WORLD.radarRangeKm) * zoom;
+    clampViewCenter();
+  }
+
+  class Missile {
+    constructor(target){
+      this.target = target;
+      this.x = 0; this.y = 0;   // km, launch from city
+      this.v = 850;             // m/s
+      this.hdg = Math.atan2(target.y, target.x);
+      this.ttl = 70;            // seconds
+      this.turnRate = 10 * (Math.PI/180); // rad/s
+      this.active = true;
+    }
+    update(dt){
+      if(!this.active) return;
+      this.ttl -= dt;
+      if(this.ttl <= 0 || !this.target.alive){
+        this.active = false;
+        return;
+      }
+
+      let dx = this.target.x - this.x;
+      let dy = this.target.y - this.y;
+      const desired = Math.atan2(dy, dx);
+      const dd = angDiff(this.hdg, desired);
+      const maxT = this.turnRate * dt;
+      this.hdg = wrapAng(this.hdg + clamp(dd, -maxT, maxT));
+
+      const kmps = this.v / 1000;
+      this.x += Math.cos(this.hdg) * kmps * dt;
+      this.y += Math.sin(this.hdg) * kmps * dt;
+
+      dx = this.target.x - this.x;
+      dy = this.target.y - this.y;
+      const d = Math.hypot(dx, dy);
+      if(d < 0.35){
+        this.active = false;
+        this.target.alive = false;
+        logEvt(`Поражение цели UID ${this.target.uid} ракетой ПВО.`, 'ok');
+        const tr = tracks.get(this.target.uid);
+        if(tr){
+          tr.pushHist(tr.x, tr.y);
+        }
+        score += 15;
+        beep(1280, 0.08, 0.05);
+      }
+    }
   }
   window.addEventListener('resize', resize);
 
   function worldToPx(xKm, yKm){
     return {
-      x: radarCenter.x + xKm * pxPerKm,
-      y: radarCenter.y + yKm * pxPerKm
+      x: radarCenter.x + (xKm - viewCenter.x) * pxPerKm,
+      y: radarCenter.y + (yKm - viewCenter.y) * pxPerKm
     };
   }
 
   function pxToWorld(px, py){
     return {
-      x: (px - radarCenter.x) / pxPerKm,
-      y: (py - radarCenter.y) / pxPerKm
+      x: ((px - radarCenter.x) / pxPerKm) + viewCenter.x,
+      y: ((py - radarCenter.y) / pxPerKm) + viewCenter.y
     };
+  }
+
+  function clampViewCenter(){
+    // keep view inside radar circle
+    const visibleRadius = WORLD.radarRangeKm / zoom;
+    const maxOffset = Math.max(0, WORLD.radarRangeKm - visibleRadius + 0.2);
+    const d = Math.hypot(viewCenter.x, viewCenter.y);
+    if(d > maxOffset){
+      const s = maxOffset / (d || 1);
+      viewCenter.x *= s;
+      viewCenter.y *= s;
+    }
+  }
+
+  function applyZoom(factor, anchorPx){
+    const before = anchorPx ? pxToWorld(anchorPx.x, anchorPx.y) : {x:viewCenter.x, y:viewCenter.y};
+    zoom = clamp(zoom * factor, 0.6, 2.2);
+    pxPerKm = (radarR / WORLD.radarRangeKm) * zoom;
+    clampViewCenter();
+    const after = anchorPx ? pxToWorld(anchorPx.x, anchorPx.y) : {x:viewCenter.x, y:viewCenter.y};
+    if(anchorPx){
+      viewCenter.x += before.x - after.x;
+      viewCenter.y += before.y - after.y;
+      clampViewCenter();
+    }
+    ui.zoomTxt.textContent = `${zoom.toFixed(2)}×`;
   }
 
   function drawBackground(){
@@ -1035,6 +1163,10 @@
     // outer circle
     ctx.save();
     ctx.translate(radarCenter.x, radarCenter.y);
+    ctx.beginPath();
+    ctx.arc(0,0,radarR,0,TAU);
+    ctx.clip();
+    ctx.translate(-viewCenter.x*pxPerKm, -viewCenter.y*pxPerKm);
 
     // rings
     const rings = [1.0, WORLD.midRingKm/WORLD.radarRangeKm, WORLD.innerRingKm/WORLD.radarRangeKm, WORLD.cityDangerKm/WORLD.radarRangeKm];
@@ -1096,6 +1228,10 @@
   function drawSweep(radar){
     ctx.save();
     ctx.translate(radarCenter.x, radarCenter.y);
+    ctx.beginPath();
+    ctx.arc(0,0,radarR,0,TAU);
+    ctx.clip();
+    ctx.translate(-viewCenter.x*pxPerKm, -viewCenter.y*pxPerKm);
 
     const a = radar.ang;
     // beam gradient wedge
@@ -1126,6 +1262,11 @@
   }
 
   function drawTracks(){
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(radarCenter.x, radarCenter.y, radarR, 0, TAU);
+    ctx.clip();
+
     // draw fading trails first
     for(const tr of tracks.values()){
       if(!tr.tgt.alive) continue;
@@ -1202,9 +1343,15 @@
         ctx.fillText(txt, p.x + 10*DPR, p.y - 6*DPR);
       }
     }
+
+    ctx.restore();
   }
 
   function drawPatrols(){
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(radarCenter.x, radarCenter.y, radarR, 0, TAU);
+    ctx.clip();
     for(const p of patrols){
       if(!p.busy) continue;
       const s = worldToPx(p.x, p.y);
@@ -1223,6 +1370,29 @@
       ctx.textAlign = 'left'; ctx.textBaseline='top';
       ctx.fillText(`PATROL ${p.stage}`, s.x+10*DPR, s.y+6*DPR);
     }
+    ctx.restore();
+  }
+
+  function drawMissiles(){
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(radarCenter.x, radarCenter.y, radarR, 0, TAU);
+    ctx.clip();
+    for(const m of missiles){
+      if(!m.active) continue;
+      const p = worldToPx(m.x, m.y);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3.4*DPR, 0, TAU);
+      ctx.fillStyle = 'rgba(140,195,255,0.95)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - Math.cos(m.hdg)*14*DPR, p.y - Math.sin(m.hdg)*14*DPR);
+      ctx.strokeStyle = 'rgba(140,195,255,0.35)';
+      ctx.lineWidth = 1.2*DPR;
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function drawSelection(){
@@ -1231,8 +1401,12 @@
     if(!tr.tgt.alive) return;
     const p = worldToPx(tr.x, tr.y);
 
-    // reticle
     ctx.save();
+    ctx.beginPath();
+    ctx.arc(radarCenter.x, radarCenter.y, radarR, 0, TAU);
+    ctx.clip();
+
+    // reticle
     ctx.strokeStyle = 'rgba(45,240,192,0.85)';
     ctx.lineWidth = 1.6*DPR;
     ctx.beginPath();
@@ -1248,7 +1422,6 @@
     ctx.moveTo(p.x, p.y+10*DPR);
     ctx.lineTo(p.x, p.y+26*DPR);
     ctx.stroke();
-    ctx.restore();
 
     // predicted short vector (purely visual)
     const kmps = tr.v/1000;
@@ -1262,6 +1435,7 @@
     ctx.moveTo(p.x,p.y);
     ctx.lineTo(px.x,px.y);
     ctx.stroke();
+    ctx.restore();
     ctx.restore();
   }
 
@@ -1289,6 +1463,7 @@
     ui.btnClass.disabled = !has;
     ui.btnAlert.disabled = !has || (has && selected.alerted);
     ui.btnPatrol.disabled = !has || patrols.every(p=>p.busy);
+    ui.btnFire.disabled = !has || !canFireAt(selected);
 
     // kv
     const rows = ui.selKv.querySelectorAll('.v');
@@ -1323,6 +1498,12 @@
     rows[6].textContent = hTxt;
     rows[7].textContent = qTxt;
     rows[8].textContent = dTxt;
+  }
+
+  function canFireAt(tr){
+    if(!tr || !tr.tgt.alive) return false;
+    const rKm = Math.hypot(tr.x, tr.y);
+    return rKm <= 85 && missiles.filter(m=>m.active).length < 6;
   }
 
   function rebuildList(){
@@ -1382,8 +1563,10 @@
       }
     }
     if(e.button===2){
-      // right click: just deselect for simplicity
+      // right click: center back on city + drop selection
+      viewCenter = {x:0,y:0};
       selected = null;
+      clampViewCenter();
       updateSelectedPanel();
       rebuildList();
       e.preventDefault();
@@ -1394,10 +1577,12 @@
 
   canvas.addEventListener('wheel', (e)=>{
     const delta = Math.sign(e.deltaY);
-    if(delta>0) zoom = clamp(zoom*0.92, 0.6, 2.2);
-    else zoom = clamp(zoom*1.08, 0.6, 2.2);
-    pxPerKm = (radarR / WORLD.radarRangeKm) * zoom;
-    ui.zoomTxt.textContent = `${zoom.toFixed(2)}×`;
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * DPR;
+    const py = (e.clientY - rect.top) * DPR;
+    const inside = Math.hypot(px - radarCenter.x, py - radarCenter.y) <= radarR;
+    const factor = delta>0 ? 0.92 : 1.08;
+    applyZoom(factor, inside ? {x:px,y:py} : null);
     e.preventDefault();
   }, {passive:false});
 
@@ -1417,6 +1602,8 @@
       if(selected) classifyTrack(selected);
     } else if(e.key.toLowerCase()==='e'){
       if(selected) issueAlert(selected);
+    } else if(e.key.toLowerCase()==='f'){
+      if(selected) launchMissile(selected);
     } else if(e.key.toLowerCase()==='p'){
       if(selected) assignPatrol(selected);
     } else if(e.key === 'Escape'){
@@ -1430,11 +1617,12 @@
   ui.btnAuto.addEventListener('click', ()=>{ WORLD.autoTrack = !WORLD.autoTrack; ui.autoTxt.textContent = WORLD.autoTrack?'ON':'OFF'; });
   ui.btnClass.addEventListener('click', ()=>{ if(selected) classifyTrack(selected); });
   ui.btnAlert.addEventListener('click', ()=>{ if(selected) issueAlert(selected); });
+  ui.btnFire.addEventListener('click', ()=>{ if(selected) launchMissile(selected); });
   ui.btnPatrol.addEventListener('click', ()=>{ if(selected) assignPatrol(selected); });
   ui.btnDrop.addEventListener('click', ()=>{ selected=null; updateSelectedPanel(); rebuildList(); });
 
-  ui.btnZoomIn.addEventListener('click', ()=>{ zoom=clamp(zoom*1.10,0.6,2.2); pxPerKm=(radarR/WORLD.radarRangeKm)*zoom; ui.zoomTxt.textContent=`${zoom.toFixed(2)}×`; });
-  ui.btnZoomOut.addEventListener('click', ()=>{ zoom=clamp(zoom*0.91,0.6,2.2); pxPerKm=(radarR/WORLD.radarRangeKm)*zoom; ui.zoomTxt.textContent=`${zoom.toFixed(2)}×`; });
+  ui.btnZoomIn.addEventListener('click', ()=>{ applyZoom(1.10, {x:radarCenter.x, y:radarCenter.y}); });
+  ui.btnZoomOut.addEventListener('click', ()=>{ applyZoom(0.91, {x:radarCenter.x, y:radarCenter.y}); });
   ui.btnReset.addEventListener('click', resetScenario);
   ui.btnMute.addEventListener('click', ()=>{
     soundOn = !soundOn;
@@ -1455,6 +1643,7 @@
     ui.wind.textContent = `${fmt1(wind.x)} / ${fmt1(wind.y)} м/с`;
     ui.ct.textContent = targets.filter(t=>t.alive).length;
     ui.tr.textContent = [...tracks.values()].filter(tr=>tr.tgt.alive).length;
+    ui.sam.textContent = missiles.filter(m=>m.active).length;
     ui.pat.textContent = patrols.filter(p=>!p.busy).length;
     ui.score.textContent = `SCORE ${score}`;
 
@@ -1539,6 +1728,10 @@
 
     // update patrols
     for(const p of patrols) p.update(dt);
+
+    // update missiles
+    for(const m of missiles) m.update(dt);
+    missiles = missiles.filter(m=>m.active);
 
     // radar detection pass: generate plots on sweep
     for(const t of targets){
@@ -1651,6 +1844,7 @@
     drawBackground();
     drawRadarGrid(radar);
     drawTracks();
+    drawMissiles();
     drawPatrols();
     drawSweep(radar);
     drawSelection();
@@ -1668,6 +1862,7 @@
   // ---------- Boot ----------
   resize();
   ui.zoomTxt.textContent = `${zoom.toFixed(2)}×`;
+  clampViewCenter();
   ui.autoTxt.textContent = WORLD.autoTrack ? 'ON' : 'OFF';
   ui.autoClTxt.textContent = WORLD.autoClassify ? 'ON' : 'OFF';
   ui.noise.textContent = WORLD.noiseMode;
